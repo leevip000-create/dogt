@@ -1,5 +1,20 @@
 {
-     "name": "dogt",
-     "identifier": "com.leevip000.dogt",
-     "apps": []
-   }
+  "name": "dogt",
+  "identifier": "com.leevip000.dogt",
+  "apps": [
+    {
+      "name": "WeatherShell",
+      "bundleIdentifier": "com.lee.weather.WeatherShell",
+      "developerName": "You",
+      "versions": [
+        {
+          "version": "1.0",
+          "date": "2026-07-10",
+          "downloadURL": "https://github.com/leevip000-create/dogt/raw/main/ipa/WeatherShell_v6_20260710_164946.ipa",
+          "size": 12458896,
+          "minOSVersion": "17.2"
+        }
+      ]
+    }
+  ]
+}
