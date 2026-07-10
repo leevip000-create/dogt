@@ -1,51 +1,64 @@
 <!DOCTYPE html>
-   <html lang="zh">
-   <head>
-   <meta charset="utf-8">
-   <meta name="viewport" content="width=device-width, initial-scale=1">
-   <title>dogt 软件源上传</title>
-   <style>
-     body{font-family:sans-serif;max-width:500px;margin:40px auto;padding:0 16px}
-     #drop{border:2px dashed #888;border-radius:12px;padding:40px;text-align:center;color:#666}
-     input,button{width:100%;padding:12px;margin-top:12px;font-size:16px;box-sizing:border-box}
-     button{background:#0070f3;color:#fff;border:none;border-radius:8px}
-     #log{margin-top:16px;color:#333;white-space:pre-wrap}
-   </style>
-   </head>
-   <body>
-   <h2>上传 IPA 到 dogt</h2>
-   <div id="drop">把 IPA 拖到这里，或点击选择</div>
-   <input type="file" id="file" accept=".ipa" style="display:none">
-   <input type="text" id="hist" placeholder="历史名称（可选，留空则用IPA自带名称）">
-   <button id="go">上传</button>
-   <div id="log"></div>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dogt 软件源上传</title>
+<style>
+  body{font-family:sans-serif;max-width:500px;margin:40px auto;padding:0 16px}
+  #drop{border:2px dashed #888;border-radius:12px;padding:40px;text-align:center;color:#666}
+  input,button{width:100%;padding:12px;margin-top:12px;font-size:16px;box-sizing:border-box}
+  button{background:#0070f3;color:#fff;border:none;border-radius:8px}
+  #log{margin-top:16px;color:#333;white-space:pre-wrap}
+  .tip{font-size:13px;color:#999;margin-top:4px}
+</style>
+</head>
+<body>
+<h2>上传 IPA 到 dogt</h2>
 
-   <script>
-   const drop=document.getElementById('drop'),file=document.getElementById('file'),
-         log=document.getElementById('log');
-   let picked=null;
-   drop.onclick=()=>file.click();
-   file.onchange=e=>{picked=e.target.files[0];drop.textContent=picked.name;};
-   drop.ondragover=e=>{e.preventDefault();};
-   drop.ondrop=e=>{e.preventDefault();picked=e.dataTransfer.files[0];drop.textContent=picked.name;};
+<input type="password" id="token" placeholder="粘贴你的 GitHub Token（github_pat_开头）">
+<div class="tip">只存在本机浏览器，不会上传。填一次后会记住。</div>
 
-   document.getElementById('go').onclick=async()=>{
-     if(!picked){log.textContent='请先选择 IPA';return;}
-     const hist=document.getElementById('hist').value.trim();
-     const fname=hist? `${hist}__${picked.name}` : picked.name;
-     log.textContent='读取文件中…';
-     const buf=await picked.arrayBuffer();
-     let bin='';const bytes=new Uint8Array(buf);
-     for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
-     const b64=btoa(bin);
-     log.textContent='上传中…（大文件请耐心等待）';
-     const r=await fetch('/api/upload',{
-       method:'POST',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({filename:fname,content:b64})
-     });
-     const j=await r.json();
-     log.textContent=j.ok?'上传成功！机器人正在自动迭代版本，稍等1分钟。':'失败：'+j.err;
-   };
-   </script>
-   </body>
-   </html>
+<div id="drop" style="margin-top:16px">把 IPA 拖到这里，或点击选择</div>
+<input type="file" id="file" accept=".ipa" style="display:none">
+<input type="text" id="hist" placeholder="历史名称（可选，留空则用文件名）">
+<button id="go">上传</button>
+<div id="log"></div>
+
+<script>
+const REPO="leevip000-create/dogt";
+const drop=document.getElementById('drop'),file=document.getElementById('file'),
+      log=document.getElementById('log'),tokenBox=document.getElementById('token');
+// 记住上次填的 token（仅本机）
+try{const t=window.name; if(t&&t.startsWith('github_pat_'))tokenBox.value=t;}catch(e){}
+let picked=null;
+drop.onclick=()=>file.click();
+file.onchange=e=>{picked=e.target.files[0];drop.textContent=picked.name;};
+drop.ondragover=e=>{e.preventDefault();};
+drop.ondrop=e=>{e.preventDefault();picked=e.dataTransfer.files[0];drop.textContent=picked.name;};
+
+document.getElementById('go').onclick=async()=>{
+  const token=tokenBox.value.trim();
+  if(!token.startsWith('github_pat_')){log.textContent='请先粘贴正确的 GitHub Token';return;}
+  if(!picked){log.textContent='请先选择 IPA';return;}
+  try{window.name=token;}catch(e){}
+  const hist=document.getElementById('hist').value.trim();
+  const fname=(hist? hist+'__' : '')+picked.name;
+  log.textContent='读取文件中…';
+  const buf=await picked.arrayBuffer();
+  let bin='';const bytes=new Uint8Array(buf),chunk=8192;
+  for(let i=0;i<bytes.length;i+=chunk){bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));}
+  const b64=btoa(bin);
+  log.textContent='上传中…（大文件请耐心等待）';
+  const url=`https://api.github.com/repos/${REPO}/contents/ipa/${encodeURIComponent(fname)}`;
+  const r=await fetch(url,{
+    method:'PUT',
+    headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json'},
+    body:JSON.stringify({message:'upload '+fname,content:b64})
+  });
+  if(r.ok){log.textContent='上传成功！机器人正在自动迭代版本，稍等1分钟。';}
+  else{const e=await r.text();log.textContent='失败：'+e;}
+};
+</script>
+</body>
+</html>
