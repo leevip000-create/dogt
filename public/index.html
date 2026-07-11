@@ -8,16 +8,18 @@
   body{font-family:sans-serif;max-width:520px;margin:40px auto;padding:0 16px;color:#222}
   #drop{border:2px dashed #888;border-radius:12px;padding:40px;text-align:center;color:#666;cursor:pointer}
   input,button,select{width:100%;padding:12px;margin-top:12px;font-size:16px;box-sizing:border-box;border:1px solid #ccc;border-radius:8px}
-  button{background:#0070f3;color:#fff;border:none}
+  button{background:#0070f3;color:#fff;border:none;cursor:pointer}
   button:disabled{background:#9cc4f5}
   .tip{font-size:13px;color:#999;margin-top:4px}
   .card{margin-top:20px;border:1px solid #ddd;border-radius:12px;padding:16px;background:#fafafa}
-  .row{margin:6px 0;font-size:15px}
+  .row{margin:8px 0;font-size:15px}
   .k{color:#888;display:inline-block;width:80px}
-  .link{word-break:break-all;background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px;font-size:13px;margin-top:6px}
+  .link{word-break:break-all;background:#fff;border:1px solid #ddd;border-radius:6px;padding:10px;font-size:13px;margin-top:6px}
+  .copy{margin-top:8px;background:#28a745}
   .spin{display:inline-block;width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-3px;margin-right:8px}
   @keyframes s{to{transform:rotate(360deg)}}
   #log{margin-top:12px;color:#c00}
+  .pending{color:#e69500;font-size:14px}
 </style>
 </head>
 <body>
@@ -39,16 +41,15 @@
 <script>
 const REPO="leevip000-create/dogt";
 const RAW="https://raw.githubusercontent.com/"+REPO+"/main";
-const drop=document.getElementById('drop'),file=document.getElementById('file'),
-      log=document.getElementById('log'),tokenBox=document.getElementById('token'),
-      pick=document.getElementById('pick'),nameBox=document.getElementById('name'),
-      go=document.getElementById('go'),result=document.getElementById('result');
+const $=id=>document.getElementById(id);
+const drop=$('drop'),file=$('file'),log=$('log'),tokenBox=$('token'),
+      pick=$('pick'),nameBox=$('name'),go=$('go'),result=$('result');
 try{const t=window.name; if(t&&t.startsWith('github_pat_'))tokenBox.value=t;}catch(e){}
 
-// 载入已有软件名，填进下拉
 fetch(RAW+"/versions.json?t="+Date.now()).then(r=>r.json()).then(d=>{
   Object.keys(d).forEach(n=>{
-    const o=document.createElement('option');o.value=n;o.textContent=n+"（当前 "+d[n].current+"）";
+    const o=document.createElement('option');
+    o.value=n;o.textContent=n+"（当前 "+d[n].current+"）";
     pick.appendChild(o);
   });
 }).catch(()=>{});
@@ -59,6 +60,30 @@ drop.onclick=()=>file.click();
 file.onchange=e=>{picked=e.target.files[0];drop.textContent=picked.name;};
 drop.ondragover=e=>e.preventDefault();
 drop.ondrop=e=>{e.preventDefault();picked=e.dataTransfer.files[0];drop.textContent=picked.name;};
+
+function showCard(appName,subUrl,verText,timeText){
+  result.innerHTML=`
+    <div class="card">
+      <div class="row"><span class="k">名称</span>${appName}</div>
+      <div class="row"><span class="k">版本</span><span id="ver">${verText}</span></div>
+      <div class="row"><span class="k">上传时间</span><span id="tm">${timeText}</span></div>
+      <div class="row"><span class="k">订阅链接</span></div>
+      <div class="link" id="lk">${subUrl}</div>
+      <button class="copy" id="cp">一键复制订阅链接</button>
+    </div>`;
+  $('cp').onclick=()=>{
+    navigator.clipboard.writeText(subUrl).then(()=>{
+      $('cp').textContent='已复制 ✓';
+      setTimeout(()=>{$('cp').textContent='一键复制订阅链接';},2000);
+    }).catch(()=>{
+      const r=document.createRange();r.selectNode($('lk'));
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(r);
+      document.execCommand('copy');
+      $('cp').textContent='已复制 ✓';
+    });
+  };
+}
 
 go.onclick=async()=>{
   const token=tokenBox.value.trim();
@@ -85,35 +110,30 @@ go.onclick=async()=>{
     body:JSON.stringify({message:'upload '+fname,content:b64})
   });
 
-  if(!r.ok){
-    go.disabled=false;go.textContent='上传';
-    log.textContent='上传失败：'+await r.text();
-    return;
-  }
-
-  go.innerHTML='<span class="spin"></span>机器人处理中…';
-  // 轮询等待机器人更新 versions.json
-  let info=null;
-  for(let i=0;i<30;i++){
-    await new Promise(s=>setTimeout(s,4000));
-    try{
-      const d=await (await fetch(RAW+"/versions.json?t="+Date.now())).json();
-      if(d[appName]&&d[appName].versions[0].file===fname){info=d[appName].versions[0];break;}
-    }catch(e){}
-  }
-
   go.disabled=false;go.textContent='上传';
-  if(!info){log.textContent='已上传，但机器人还在处理，请稍后刷新查看。';return;}
 
+  if(!r.ok){log.textContent='上传失败：'+await r.text();return;}
+
+  // 上传成功，立刻给出订阅链接（规则固定，不必等机器人）
   const subUrl=RAW+"/apps/"+encodeURIComponent(appName)+".json";
-  result.innerHTML=`
-    <div class="card">
-      <div class="row"><span class="k">名称</span>${appName}</div>
-      <div class="row"><span class="k">版本</span>${info.version}</div>
-      <div class="row"><span class="k">上传时间</span>${info.time}</div>
-      <div class="row"><span class="k">订阅链接</span></div>
-      <div class="link">${subUrl}</div>
-    </div>`;
+  showCard(appName,subUrl,'<span class="pending">处理中…</span>','<span class="pending">处理中…</span>');
+
+  // 后台默默轮询，补上版本号和时间
+  (async()=>{
+    for(let i=0;i<30;i++){
+      await new Promise(s=>setTimeout(s,4000));
+      try{
+        const d=await (await fetch(RAW+"/versions.json?t="+Date.now())).json();
+        if(d[appName]&&d[appName].versions[0].file===fname){
+          const v=d[appName].versions[0];
+          if($('ver'))$('ver').textContent=v.version;
+          if($('tm'))$('tm').textContent=v.time;
+          return;
+        }
+      }catch(e){}
+    }
+    if($('ver'))$('ver').innerHTML='<span class="pending">机器人处理较慢，稍后刷新查看</span>';
+  })();
 };
 </script>
 </body>
