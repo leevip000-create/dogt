@@ -5,59 +5,115 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dogt 软件源上传</title>
 <style>
-  body{font-family:sans-serif;max-width:500px;margin:40px auto;padding:0 16px}
-  #drop{border:2px dashed #888;border-radius:12px;padding:40px;text-align:center;color:#666}
-  input,button{width:100%;padding:12px;margin-top:12px;font-size:16px;box-sizing:border-box}
-  button{background:#0070f3;color:#fff;border:none;border-radius:8px}
-  #log{margin-top:16px;color:#333;white-space:pre-wrap}
+  body{font-family:sans-serif;max-width:520px;margin:40px auto;padding:0 16px;color:#222}
+  #drop{border:2px dashed #888;border-radius:12px;padding:40px;text-align:center;color:#666;cursor:pointer}
+  input,button,select{width:100%;padding:12px;margin-top:12px;font-size:16px;box-sizing:border-box;border:1px solid #ccc;border-radius:8px}
+  button{background:#0070f3;color:#fff;border:none}
+  button:disabled{background:#9cc4f5}
   .tip{font-size:13px;color:#999;margin-top:4px}
+  .card{margin-top:20px;border:1px solid #ddd;border-radius:12px;padding:16px;background:#fafafa}
+  .row{margin:6px 0;font-size:15px}
+  .k{color:#888;display:inline-block;width:80px}
+  .link{word-break:break-all;background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px;font-size:13px;margin-top:6px}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-3px;margin-right:8px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  #log{margin-top:12px;color:#c00}
 </style>
 </head>
 <body>
 <h2>上传 IPA 到 dogt</h2>
 
-<input type="password" id="token" placeholder="粘贴你的 GitHub Token（github_pat_开头）">
-<div class="tip">只存在本机浏览器，不会上传。填一次后会记住。</div>
+<input type="password" id="token" placeholder="粘贴 GitHub Token（github_pat_开头）">
+<div class="tip">只存在本机浏览器，不会上传。</div>
 
 <div id="drop" style="margin-top:16px">把 IPA 拖到这里，或点击选择</div>
 <input type="file" id="file" accept=".ipa" style="display:none">
-<input type="text" id="hist" placeholder="历史名称（可选，留空则用文件名）">
+
+<select id="pick"><option value="">— 新建软件名 —</option></select>
+<input type="text" id="name" placeholder="软件名（如：天气）">
+
 <button id="go">上传</button>
 <div id="log"></div>
+<div id="result"></div>
 
 <script>
 const REPO="leevip000-create/dogt";
+const RAW="https://raw.githubusercontent.com/"+REPO+"/main";
 const drop=document.getElementById('drop'),file=document.getElementById('file'),
-      log=document.getElementById('log'),tokenBox=document.getElementById('token');
-// 记住上次填的 token（仅本机）
+      log=document.getElementById('log'),tokenBox=document.getElementById('token'),
+      pick=document.getElementById('pick'),nameBox=document.getElementById('name'),
+      go=document.getElementById('go'),result=document.getElementById('result');
 try{const t=window.name; if(t&&t.startsWith('github_pat_'))tokenBox.value=t;}catch(e){}
+
+// 载入已有软件名，填进下拉
+fetch(RAW+"/versions.json?t="+Date.now()).then(r=>r.json()).then(d=>{
+  Object.keys(d).forEach(n=>{
+    const o=document.createElement('option');o.value=n;o.textContent=n+"（当前 "+d[n].current+"）";
+    pick.appendChild(o);
+  });
+}).catch(()=>{});
+pick.onchange=()=>{nameBox.value=pick.value;};
+
 let picked=null;
 drop.onclick=()=>file.click();
 file.onchange=e=>{picked=e.target.files[0];drop.textContent=picked.name;};
-drop.ondragover=e=>{e.preventDefault();};
+drop.ondragover=e=>e.preventDefault();
 drop.ondrop=e=>{e.preventDefault();picked=e.dataTransfer.files[0];drop.textContent=picked.name;};
 
-document.getElementById('go').onclick=async()=>{
+go.onclick=async()=>{
   const token=tokenBox.value.trim();
-  if(!token.startsWith('github_pat_')){log.textContent='请先粘贴正确的 GitHub Token';return;}
+  const appName=nameBox.value.trim();
+  log.textContent='';result.innerHTML='';
+  if(!token.startsWith('github_pat_')){log.textContent='请先粘贴 GitHub Token';return;}
   if(!picked){log.textContent='请先选择 IPA';return;}
+  if(!appName){log.textContent='请填写或选择软件名';return;}
   try{window.name=token;}catch(e){}
-  const hist=document.getElementById('hist').value.trim();
-  const fname=(hist? hist+'__' : '')+picked.name;
-  log.textContent='读取文件中…';
+
+  go.disabled=true;
+  go.innerHTML='<span class="spin"></span>上传中…';
+
+  const fname=appName+'__'+picked.name;
   const buf=await picked.arrayBuffer();
   let bin='';const bytes=new Uint8Array(buf),chunk=8192;
   for(let i=0;i<bytes.length;i+=chunk){bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));}
   const b64=btoa(bin);
-  log.textContent='上传中…（大文件请耐心等待）';
+
   const url=`https://api.github.com/repos/${REPO}/contents/ipa/${encodeURIComponent(fname)}`;
   const r=await fetch(url,{
     method:'PUT',
     headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json'},
     body:JSON.stringify({message:'upload '+fname,content:b64})
   });
-  if(r.ok){log.textContent='上传成功！机器人正在自动迭代版本，稍等1分钟。';}
-  else{const e=await r.text();log.textContent='失败：'+e;}
+
+  if(!r.ok){
+    go.disabled=false;go.textContent='上传';
+    log.textContent='上传失败：'+await r.text();
+    return;
+  }
+
+  go.innerHTML='<span class="spin"></span>机器人处理中…';
+  // 轮询等待机器人更新 versions.json
+  let info=null;
+  for(let i=0;i<30;i++){
+    await new Promise(s=>setTimeout(s,4000));
+    try{
+      const d=await (await fetch(RAW+"/versions.json?t="+Date.now())).json();
+      if(d[appName]&&d[appName].versions[0].file===fname){info=d[appName].versions[0];break;}
+    }catch(e){}
+  }
+
+  go.disabled=false;go.textContent='上传';
+  if(!info){log.textContent='已上传，但机器人还在处理，请稍后刷新查看。';return;}
+
+  const subUrl=RAW+"/apps/"+encodeURIComponent(appName)+".json";
+  result.innerHTML=`
+    <div class="card">
+      <div class="row"><span class="k">名称</span>${appName}</div>
+      <div class="row"><span class="k">版本</span>${info.version}</div>
+      <div class="row"><span class="k">上传时间</span>${info.time}</div>
+      <div class="row"><span class="k">订阅链接</span></div>
+      <div class="link">${subUrl}</div>
+    </div>`;
 };
 </script>
 </body>
